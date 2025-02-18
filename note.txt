@@ -1,0 +1,14 @@
+camunda:
+  client:
+    mode: self-managed  # Chỉ định sử dụng Camunda 8 Self-Managed thay vì Camunda SaaS
+    zeebe:
+      enabled: true  # Bật kết nối Zeebe Client để xử lý Job Workers
+      grpc-address: "zeebe-gateway.internal.yourcompany.com:26500"  # Địa chỉ nội bộ của Zeebe Gateway (gRPC)
+      rest-address: "http://camunda-api.internal.yourcompany.com:8080"  # Địa chỉ nội bộ của Camunda REST API
+      security:
+        authentication:
+          mode: oauth  # Sử dụng OAuth 2.0 để xác thực
+          audience: zeebe-api  # Giá trị "audience" từ Identity Provider (Keycloak, Auth0, etc.)
+          authorization-server-url: "https://auth.internal.yourcompany.com/realms/camunda/protocol/openid-connect/token"
+          client-id: "your-client-id"  # Client ID từ Keycloak hoặc Identity Provider
+          client-secret: "your-client-secret"  # Client Secret từ Keycloak hoặc Identity Provider
