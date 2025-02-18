@@ -12,3 +12,37 @@ camunda:
           authorization-server-url: "https://auth.internal.yourcompany.com/realms/camunda/protocol/openid-connect/token"
           client-id: "your-client-id"  # Client ID từ Keycloak hoặc Identity Provider
           client-secret: "your-client-secret"  # Client Secret từ Keycloak hoặc Identity Provider
+
+
+
+
+spring:
+  application:
+    name: Lab_Camuda_08_JobWorker
+
+server:
+  port: 8999
+
+camunda:
+  client:
+    mode: self-managed
+    auth:
+      client-id: zeebe
+      client-secret: zecret
+      issuer: http://localhost:18080/auth/realms/camunda-platform/protocol/openid-connect/token
+    zeebe:
+      enabled: true
+      grpc-address: http://127.0.0.1:26500
+      #rest-address: http://127.0.0.1:8080
+      audience: zeebe-api
+
+
+logging:
+  level:
+    root: INFO
+    org.camunda: DEBUG
+  file:
+    name: logs/app.log
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} %-5level %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} %-5level %logger{36} - %msg%n"
