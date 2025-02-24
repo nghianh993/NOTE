@@ -46,3 +46,63 @@ logging:
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} %-5level %logger{36} - %msg%n"
     file: "%d{yyyy-MM-dd HH:mm:ss} %-5level %logger{36} - %msg%n"
+
+
+
+
+
+
+# Ý nghĩa các config jobworker
+
+
+
+camunda:
+  client:
+    mode: self-managed                            # Chế độ hoạt động: tự quản lý (self-managed) thay vì SaaS
+    auth:
+      client-id: zeebe                            # Client ID dùng để xác thực với OAuth2 provider (ví dụ: Keycloak)
+      client-secret: zecret                       # Client Secret tương ứng với client-id
+      issuer: http://localhost:18080/auth/realms/camunda-platform/protocol/openid-connect/token  
+                                                  # URL của issuer, endpoint để lấy token OAuth2
+    zeebe:
+      enabled: true                               # Kích hoạt kết nối đến Zeebe
+      grpc-address: http://127.0.0.1:26500          # Địa chỉ gRPC của Zeebe (mặc định cổng 26500)
+      rest-address: http://127.0.0.1:8080           # Địa chỉ REST của Zeebe (nếu cần)
+      audience: zeebe-api                         # Audience dùng trong token OAuth2 khi kết nối tới Zeebe
+      base-url: ''                                # Base URL (để trống nếu không sử dụng)
+      ca-certificate-path: ''                     # Đường dẫn tới CA certificate nếu cần xác thực SSL/TLS
+      defaults:                                   # Cấu hình mặc định cho các job worker
+        auto-complete: false                      # Không tự động hoàn thành job sau khi xử lý (phải gọi explicit complete)
+        enabled: false                            # Không bật job worker mặc định; cần được kích hoạt riêng
+        fetch-variables: ''                       # Danh sách các biến cần lấy khi thực thi job (để trống nghĩa là không fetch cụ thể)
+        force-fetch-all-variables: false          # Không bắt buộc lấy tất cả các biến của process instance
+        max-jobs-active: 3                        # Số lượng job tối đa được xử lý đồng thời
+        max-retries: 3                            # Số lần retry tối đa nếu job thất bại
+        method-info: 4                            # Thông tin chi tiết của phương thức (có thể dùng để log debug)
+        name: ''                                  # Tên của job worker (để trống sử dụng giá trị mặc định)
+        poll-interval: 1                          # Khoảng thời gian (giây) giữa các lần poll job từ Zeebe
+        request-timeout: 1000                     # Thời gian timeout cho mỗi request đến Zeebe (ms)
+        stream-enabled: false                     # Tắt tính năng streaming để nhận job (mặc định là false)
+        stream-timeout: 3                         # Thời gian timeout cho streaming job (giây)
+        tenant-ids: ''                            # Danh sách tenant IDs (nếu không dùng multi-tenancy thì để trống)
+        timeout: 1000                             # Timeout cho job lock (ms); sau thời gian này job sẽ được giải phóng nếu không hoàn thành
+        type: ''                                  # Loại job worker (job type), xác định loại công việc mà worker sẽ xử lý
+      execution-threads: 1                        # Số luồng xử lý song song cho job worker
+      keep-alive: 1                               # Thời gian keep-alive để duy trì kết nối với Zeebe
+      max-message-size: 1                         # Giới hạn kích thước của tin nhắn (đơn vị phụ thuộc vào cấu hình cụ thể)
+      max-metadata-size: 1                        # Giới hạn kích thước metadata của tin nhắn
+      message-time-to-live: 1                     # Thời gian sống của tin nhắn (TTL)
+      override-authority: 1                       # Cho phép ghi đè giá trị authority khi gửi request (nếu cần)
+      prefer-rest-over-grpc: false                # Ưu tiên sử dụng gRPC thay vì REST nếu có thể
+      request-timeout: 1                          # Timeout cho request đến Zeebe (có thể áp dụng cho gRPC/REST)
+      scope: 1                                    # Scope của request, dùng cho các mục đích xác định phạm vi (logging/metrics)
+    identity:
+      scope: 1                                    # Scope cho phần Identity, dùng nếu tích hợp dịch vụ Identity
+      enabled: false                              # Tắt Identity vì không cần thiết (nếu không sử dụng dịch vụ Identity)
+      base-url: ''                                # Base URL của dịch vụ Identity (để trống nếu không sử dụng)
+      audience: ''                                # Audience cho token Identity (để trống nếu không sử dụng)
+
+
+
+
+
