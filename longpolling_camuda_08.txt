@@ -1,0 +1,52 @@
+Dưới đây là các cấu hình liên quan đến long polling trong Camunda 8 (đặc biệt là trong phần cấu hình job worker) và giải thích ý nghĩa của từng tham số:
+camunda:
+  client:
+    zeebe:
+      defaults:
+        # Khi sử dụng long polling, worker sẽ gửi yêu cầu và chờ đợi trong khoảng thời gian
+        # nhất định để nhận các job từ Zeebe broker. Các tham số dưới đây điều chỉnh hành vi đó.
+        poll-interval: 1              # Khoảng cách giữa các lần polling, tính bằng giây. 
+                                      # Giá trị nhỏ giúp worker poll nhanh hơn khi không có job, 
+                                      # nhưng có thể tạo tải thêm cho broker nếu quá thấp.
+        request-timeout: 1000         # Thời gian chờ tối đa cho mỗi yêu cầu polling, tính bằng mili giây.
+                                      # Nếu không có phản hồi trong khoảng thời gian này, yêu cầu sẽ timeout.
+        max-jobs-active: 3            # Số job tối đa mà worker sẽ giữ và xử lý đồng thời.
+        timeout: 1000                 # Thời gian giữ (lock) cho mỗi job khi worker nhận được job (tính bằng mili giây).
+                                      # Sau thời gian này, nếu job không được hoàn thành, nó có thể được
+                                      # phát lại cho các worker khác.
+      execution-threads: 1            # Số luồng xử lý đồng thời của worker. Với long polling, bạn có thể đặt
+                                      # giá trị này thấp nếu số lượng job nhận được không quá cao.
+      prefer-rest-over-grpc: false    # Khi dùng long polling, bạn thường ưu tiên gRPC vì hiệu năng tốt hơn,
+                                      # nhưng nếu bạn muốn sử dụng REST, có thể chuyển đổi giá trị này.
+      # Các tham số khác như keep-alive, stream-timeout sẽ không áp dụng khi dùng long polling.
+
+
+Giải thích chi tiết:
+poll-interval:
+Đây là khoảng thời gian giữa các lần worker gửi yêu cầu lấy job.
+
+Nếu giá trị này thấp (ví dụ: 0.5 giây), worker sẽ liên tục gửi request, có thể gây tải lên broker nhưng giảm độ trễ nhận job.
+Nếu giá trị này cao (ví dụ: 2 giây), thời gian nhận job có thể bị trễ hơn, nhưng giảm tải cho hệ thống.
+request-timeout:
+Đây là thời gian chờ tối đa cho mỗi request polling.
+
+Nếu trong khoảng thời gian này không có phản hồi từ broker, yêu cầu sẽ bị timeout và worker sẽ gửi lại request.
+max-jobs-active:
+Số lượng job tối đa mà worker sẽ nhận và giữ đồng thời.
+
+Với long polling, nếu bạn xử lý các job có thời gian ngắn, giá trị này có thể được tăng lên để tăng throughput.
+Ngược lại, nếu job xử lý lâu, bạn nên giữ giá trị thấp để tránh quá tải.
+timeout:
+Thời gian (mili giây) mà một job được lock cho worker sau khi được nhận.
+
+Nếu worker không hoàn thành job trong thời gian này, job có thể được phát lại (retry) cho các worker khác.
+Giá trị này cần được cân nhắc dựa trên thời gian xử lý trung bình của job.
+execution-threads:
+Số luồng thực thi song song của worker.
+
+Với long polling, việc xử lý đồng thời phụ thuộc vào tài nguyên của worker và số lượng job sẵn có.
+prefer-rest-over-grpc:
+Nếu bạn để là false, worker sẽ sử dụng giao thức gRPC để thực hiện long polling, thường có hiệu năng tốt hơn so với REST. Nếu cần thiết, có thể thay đổi để dùng REST.
+
+Khi nào nên sử dụng long polling?
+Long polling là một cơ chế phù hợp khi bạn muốn giảm độ trễ trong việc nhận job mà không cần duy trì kết nối streaming liên tục. Nó cho phép worker gửi request và giữ kết nối mở trong một khoảng thời gian nhất định để nhận job ngay khi có sẵn, sau đó tự động gửi lại request khi kết thúc timeout. Điều này giúp tối ưu hóa việc sử dụng tài nguyên và giảm độ trễ so với polling ngắn (short polling).
