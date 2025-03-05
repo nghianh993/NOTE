@@ -1,17 +1,11 @@
-// Load configuration from application.yml using SnakeYAML
-        CamundaClientProperties config = CamundaClientProperties.load("application.yml");
-
-        // Initialize the connection manager with the loaded configuration
-        CamundaConnectionManager connectionManager = new CamundaConnectionManager(config);
-
-        // Retrieve the ZeebeClient instance
-        ZeebeClient client = connectionManager.getClient();
-
-        // For testing, in this example we just print out a confirmation message.
-        System.out.println("Zeebe Client successfully created: " + client);
-
-        // Optionally, you can perform further operations with the client here.
-        // ...
-
-        // Finally, close the connection when done.
-        connectionManager.close();
+ public static CamundaClientProperties load(String resourcePath) {
+        Yaml yaml = new Yaml(new Constructor(CamundaClientProperties.class));
+        try (InputStream in = CamundaClientProperties.class.getClassLoader().getResourceAsStream(resourcePath)) {
+            if (in == null) {
+                throw new RuntimeException("Resource not found: " + resourcePath);
+            }
+            return yaml.load(in);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to load configuration from " + resourcePath, e);
+        }
+    }
