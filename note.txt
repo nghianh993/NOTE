@@ -1,45 +1,14 @@
-package com.example.camunda.config;
-
-import java.io.InputStream;
-import org.yaml.snakeyaml.Yaml;
-import org.yaml.snakeyaml.constructor.Constructor;
-
-public class CamundaConfiguration {
-
-    // Thuộc tính "camunda" tương ứng với key "camunda" trong YAML
-    private CamundaWrapper camunda;
-
-    public CamundaWrapper getCamunda() {
-        return camunda;
-    }
-
-    public void setCamunda(CamundaWrapper camunda) {
-        this.camunda = camunda;
-    }
-
-    // Lớp wrapper con ánh xạ key "client" bên trong key "camunda"
-    public static class CamundaWrapper {
-        private CamundaClientProperties client;
-
-        public CamundaClientProperties getClient() {
-            return client;
+public static CamundaConfiguration load(String resourcePath) {
+    Constructor constructor = new Constructor(CamundaConfiguration.class);
+    // Sử dụng field access để ánh xạ trực tiếp vào các trường, giúp khớp được với key dạng hyphenated
+    constructor.setBeanAccess(BeanAccess.FIELD);
+    Yaml yaml = new Yaml(constructor);
+    try (InputStream in = CamundaConfiguration.class.getClassLoader().getResourceAsStream(resourcePath)) {
+        if (in == null) {
+            throw new RuntimeException("Resource not found: " + resourcePath);
         }
-
-        public void setClient(CamundaClientProperties client) {
-            this.client = client;
-        }
-    }
-
-    // Phương thức load cấu hình từ file YAML
-    public static CamundaConfiguration load(String resourcePath) {
-        Yaml yaml = new Yaml(new Constructor(CamundaConfiguration.class));
-        try (InputStream in = CamundaConfiguration.class.getClassLoader().getResourceAsStream(resourcePath)) {
-            if (in == null) {
-                throw new RuntimeException("Resource not found: " + resourcePath);
-            }
-            return yaml.load(in);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to load configuration from " + resourcePath, e);
-        }
+        return yaml.load(in);
+    } catch (Exception e) {
+        throw new RuntimeException("Failed to load configuration from " + resourcePath, e);
     }
 }
