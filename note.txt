@@ -1,71 +1,25 @@
-package com.example.camunda.connection;
+camunda:
+  client:
+    mode: self-managed
+    auth:
+      client-id: zeebe
+      client-secret: zecret
+      issuer: http://localhost:18080/auth/realms/camunda-platform/protocol/openid-connect/token
+    zeebe:
+      enabled: true
+      grpc-address: http://127.0.0.1:26500
+      rest-address: http://127.0.0.1:8080
+      audience: zeebe-api
+      defaults:
+        poll-interval: PT10S
+        stream-enabled: false
+        request-timeout: 10S
+        max-jobs-active: 5
+        timeout: 1s
 
-import com.example.camunda.config.CamundaClientProperties;
-import com.example.camunda.connection.interceptor.AuthHeaderClientInterceptor;
-import io.camunda.zeebe.client.ZeebeClient;
-import io.camunda.zeebe.client.ZeebeClientBuilder;
-import io.grpc.ClientInterceptor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-public class CamundaConnectionManager {
-
-    private static final Logger logger = LoggerFactory.getLogger(CamundaConnectionManager.class);
-    private ZeebeClient client;
-    private final CamundaClientProperties properties;
-
-    public CamundaConnectionManager(CamundaClientProperties properties) {
-        this.properties = properties;
-        connect();
-    }
-
-    private void connect() {
-        try {
-            String brokerContactPoint = properties.getZeebe().getGrpcAddress();
-            CamundaClientProperties.Auth auth = properties.getAuth();
-            String audience = properties.getZeebe().getAudience();
-            int requestTimeout = (int) properties.getZeebe().getDefaults().getRequestTimeout().toMillis();
-
-            logger.info("Setting up connection to broker via API Gateway at: {}", brokerContactPoint);
-            ZeebeClientBuilder builder = ZeebeClient.newClientBuilder()
-                    .brokerContactPoint(brokerContactPoint)
-                    .defaultRequestTimeout(requestTimeout);
-
-            // Configure OAuth credentials if available
-            if (auth.getClientId() != null && !auth.getClientId().isEmpty()) {
-                logger.info("Configuring OAuth with client-id: {} and audience: {}", auth.getClientId(), audience);
-                builder.withOAuthCredentials(
-                        auth.getClientId(),
-                        auth.getClientSecret(),
-                        auth.getIssuer(),
-                        audience
-                );
-            }
-
-            // Add custom gRPC interceptor to inject authentication headers
-            ClientInterceptor authInterceptor = new AuthHeaderClientInterceptor(
-                    auth.getClientId(), // You can modify this value if necessary
-                    auth.getClientSecret(),
-                    properties.getZeebe().getAudience() // Alternatively, use a separate field for client_type if needed
-            );
-            builder.withInterceptors(authInterceptor);
-
-            client = builder.build();
-            logger.info("Successfully connected to Zeebe broker at {}", brokerContactPoint);
-        } catch (Exception e) {
-            logger.error("Error while setting up Zeebe connection: {}", e.getMessage(), e);
-            throw new RuntimeException("Failed to connect to Zeebe broker", e);
-        }
-    }
-
-    public ZeebeClient getClient() {
-        return client;
-    }
-
-    public void close() {
-        if (client != null) {
-            client.close();
-            logger.info("Zeebe connection closed.");
-        }
-    }
-}
+logging:
+  level:
+    root: INFO
+    com.example.camunda: DEBUG
+  pattern:
+    console: '%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n'
