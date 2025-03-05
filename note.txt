@@ -6,14 +6,28 @@ import org.yaml.snakeyaml.constructor.Constructor;
 
 public class CamundaConfiguration {
 
-    private CamundaClientProperties client;
+    // Thuộc tính "camunda" tương ứng với key "camunda" trong YAML
+    private CamundaWrapper camunda;
 
-    public CamundaClientProperties getClient() {
-        return client;
+    public CamundaWrapper getCamunda() {
+        return camunda;
     }
 
-    public void setClient(CamundaClientProperties client) {
-        this.client = client;
+    public void setCamunda(CamundaWrapper camunda) {
+        this.camunda = camunda;
+    }
+
+    // Lớp wrapper con ánh xạ key "client" bên trong key "camunda"
+    public static class CamundaWrapper {
+        private CamundaClientProperties client;
+
+        public CamundaClientProperties getClient() {
+            return client;
+        }
+
+        public void setClient(CamundaClientProperties client) {
+            this.client = client;
+        }
     }
 
     // Phương thức load cấu hình từ file YAML
