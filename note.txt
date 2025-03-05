@@ -1,6 +1,25 @@
- public static CamundaClientProperties load(String resourcePath) {
-        Yaml yaml = new Yaml(new Constructor(CamundaClientProperties.class));
-        try (InputStream in = CamundaClientProperties.class.getClassLoader().getResourceAsStream(resourcePath)) {
+package com.example.camunda.config;
+
+import java.io.InputStream;
+import org.yaml.snakeyaml.Yaml;
+import org.yaml.snakeyaml.constructor.Constructor;
+
+public class CamundaConfiguration {
+
+    private CamundaClientProperties client;
+
+    public CamundaClientProperties getClient() {
+        return client;
+    }
+
+    public void setClient(CamundaClientProperties client) {
+        this.client = client;
+    }
+
+    // Phương thức load cấu hình từ file YAML
+    public static CamundaConfiguration load(String resourcePath) {
+        Yaml yaml = new Yaml(new Constructor(CamundaConfiguration.class));
+        try (InputStream in = CamundaConfiguration.class.getClassLoader().getResourceAsStream(resourcePath)) {
             if (in == null) {
                 throw new RuntimeException("Resource not found: " + resourcePath);
             }
@@ -9,3 +28,4 @@
             throw new RuntimeException("Failed to load configuration from " + resourcePath, e);
         }
     }
+}
