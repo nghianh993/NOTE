@@ -1,134 +1,37 @@
-import java.time.Duration;
+package com.example.camunda.connection.interceptor;
 
-public class CamundaClientProperties {
+import io.grpc.CallOptions;
+import io.grpc.Channel;
+import io.grpc.ClientCall;
+import io.grpc.ClientInterceptor;
+import io.grpc.ForwardingClientCall.SimpleForwardingClientCall;
+import io.grpc.Metadata;
+import io.grpc.MethodDescriptor;
 
-    private String mode;
-    private Auth auth = new Auth();
-    private Zeebe zeebe = new Zeebe();
+public class AuthHeaderClientInterceptor implements ClientInterceptor {
 
-    // Getters and Setters
-    public String getMode() {
-        return mode;
-    }
-    public void setMode(String mode) {
-        this.mode = mode;
-    }
-    public Auth getAuth() {
-        return auth;
-    }
-    public void setAuth(Auth auth) {
-        this.auth = auth;
-    }
-    public Zeebe getZeebe() {
-        return zeebe;
-    }
-    public void setZeebe(Zeebe zeebe) {
-        this.zeebe = zeebe;
+    private final String clientId;
+    private final String clientSecret;
+    private final String clientType;
+
+    public AuthHeaderClientInterceptor(String clientId, String clientSecret, String clientType) {
+        this.clientId = clientId;
+        this.clientSecret = clientSecret;
+        this.clientType = clientType;
     }
 
-    public static class Auth {
-        private String clientId;
-        private String clientSecret;
-        private String issuer; // OAuth token endpoint URL
-
-        // Getters and Setters
-        public String getClientId() {
-            return clientId;
-        }
-        public void setClientId(String clientId) {
-            this.clientId = clientId;
-        }
-        public String getClientSecret() {
-            return clientSecret;
-        }
-        public void setClientSecret(String clientSecret) {
-            this.clientSecret = clientSecret;
-        }
-        public String getIssuer() {
-            return issuer;
-        }
-        public void setIssuer(String issuer) {
-            this.issuer = issuer;
-        }
-    }
-
-    public static class Zeebe {
-        private boolean enabled;
-        private String grpcAddress;
-        private String restAddress;
-        private String audience;
-        private Defaults defaults = new Defaults();
-
-        // Getters and Setters
-        public boolean isEnabled() {
-            return enabled;
-        }
-        public void setEnabled(boolean enabled) {
-            this.enabled = enabled;
-        }
-        public String getGrpcAddress() {
-            return grpcAddress;
-        }
-        public void setGrpcAddress(String grpcAddress) {
-            this.grpcAddress = grpcAddress;
-        }
-        public String getRestAddress() {
-            return restAddress;
-        }
-        public void setRestAddress(String restAddress) {
-            this.restAddress = restAddress;
-        }
-        public String getAudience() {
-            return audience;
-        }
-        public void setAudience(String audience) {
-            this.audience = audience;
-        }
-        public Defaults getDefaults() {
-            return defaults;
-        }
-        public void setDefaults(Defaults defaults) {
-            this.defaults = defaults;
-        }
-
-        public static class Defaults {
-            private Duration pollInterval;
-            private boolean streamEnabled;
-            private Duration requestTimeout;
-            private int maxJobsActive;
-            private Duration timeout;
-
-            // Getters and Setters
-            public Duration getPollInterval() {
-                return pollInterval;
+    @Override
+    public <ReqT, RespT> ClientCall<ReqT, RespT> interceptCall(
+            MethodDescriptor<ReqT, RespT> method, CallOptions callOptions, Channel next) {
+        return new SimpleForwardingClientCall<ReqT, RespT>(next.newCall(method, callOptions)) {
+            @Override
+            public void start(Listener<RespT> responseListener, Metadata headers) {
+                // Inject custom authentication headers into every gRPC request
+                headers.put(Metadata.Key.of("client_id", Metadata.ASCII_STRING_MARSHALLER), clientId);
+                headers.put(Metadata.Key.of("client_secret", Metadata.ASCII_STRING_MARSHALLER), clientSecret);
+                headers.put(Metadata.Key.of("client_type", Metadata.ASCII_STRING_MARSHALLER), clientType);
+                super.start(responseListener, headers);
             }
-            public void setPollInterval(Duration pollInterval) {
-                this.pollInterval = pollInterval;
-            }
-            public boolean isStreamEnabled() {
-                return streamEnabled;
-            }
-            public void setStreamEnabled(boolean streamEnabled) {
-                this.streamEnabled = streamEnabled;
-            }
-            public Duration getRequestTimeout() {
-                return requestTimeout;
-            }
-            public void setRequestTimeout(Duration requestTimeout) {
-                this.requestTimeout = requestTimeout;
-            }
-            public int getMaxJobsActive() {
-                return maxJobsActive;
-            }
-            public void setMaxJobsActive(int maxJobsActive) {
-                this.maxJobsActive = maxJobsActive;
-            }
-            public Duration getTimeout() {
-                return timeout;
-            }
-            public void setTimeout(Duration timeout) {
-                this.timeout = timeout;
-            }
-        }
+        };
     }
 }
