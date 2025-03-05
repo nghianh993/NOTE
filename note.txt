@@ -1,25 +1,17 @@
-camunda:
-  client:
-    mode: self-managed
-    auth:
-      client-id: zeebe
-      client-secret: zecret
-      issuer: http://localhost:18080/auth/realms/camunda-platform/protocol/openid-connect/token
-    zeebe:
-      enabled: true
-      grpc-address: http://127.0.0.1:26500
-      rest-address: http://127.0.0.1:8080
-      audience: zeebe-api
-      defaults:
-        poll-interval: PT10S
-        stream-enabled: false
-        request-timeout: 10S
-        max-jobs-active: 5
-        timeout: 1s
+// Load configuration from application.yml using SnakeYAML
+        CamundaClientProperties config = CamundaClientProperties.load("application.yml");
 
-logging:
-  level:
-    root: INFO
-    com.example.camunda: DEBUG
-  pattern:
-    console: '%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n'
+        // Initialize the connection manager with the loaded configuration
+        CamundaConnectionManager connectionManager = new CamundaConnectionManager(config);
+
+        // Retrieve the ZeebeClient instance
+        ZeebeClient client = connectionManager.getClient();
+
+        // For testing, in this example we just print out a confirmation message.
+        System.out.println("Zeebe Client successfully created: " + client);
+
+        // Optionally, you can perform further operations with the client here.
+        // ...
+
+        // Finally, close the connection when done.
+        connectionManager.close();
