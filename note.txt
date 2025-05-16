@@ -1,56 +1,70 @@
 CREATE PROCEDURE [dbo].[sp_CalculateRdsCostByInstance]
 AS
 BEGIN
-    -- Tạo bảng tạm để lưu chi phí đã phân bổ
-    IF OBJECT_ID('tempdb..#InstanceCost') IS NOT NULL DROP TABLE #InstanceCost
-    IF OBJECT_ID('tempdb..#FinalCost') IS NOT NULL DROP TABLE #FinalCost
+    SET NOCOUNT ON;
 
-    -- 1. Lấy chi phí usage chứa ':db.' (chi phí cụ thể theo instance type)
-    SELECT
-        rdc.Aws_AccountName,
-        REPLACE(SUBSTRING(rdc.UsageType, CHARINDEX(':db.', rdc.UsageType) + 4, LEN(rdc.UsageType)), '-usage', '') AS DbInstanceType,
-        SUM(rdc.Cost) AS TotalMatchedCost
-    INTO #InstanceCost
-    FROM [RDS_COST] rdc
-    WHERE rdc.UsageType LIKE '%:db.%'
-    GROUP BY rdc.Aws_AccountName,
-             REPLACE(SUBSTRING(rdc.UsageType, CHARINDEX(':db.', rdc.UsageType) + 4, LEN(rdc.UsageType)), '-usage', '')
+    -- Lấy danh sách các DbInstanceType có trong RDS_COST (matched types)
+    IF OBJECT_ID('tempdb..#ValidTypes') IS NOT NULL DROP TABLE #ValidTypes;
+    SELECT DISTINCT 
+        Aws_AccountName,
+        REPLACE(SUBSTRING(UsageType, CHARINDEX(':db.', UsageType) + 4, LEN(UsageType)), 'Usage', '') AS DbInstanceType
+    INTO #ValidTypes
+    FROM RDS_COST
+    WHERE UsageType LIKE '%InstanceUsage:db.%';
 
-    -- 2. Tính tổng chi phí KHÔNG PHẢI usage ':db.' theo account
-    ;WITH UnmatchedCost AS (
-        SELECT
-            Aws_AccountName,
-            SUM(Cost) AS TotalUnmatchedCost
-        FROM [RDS_COST]
-        WHERE UsageType NOT LIKE '%:db.%'
-              AND UsageType <> 'TOTAL'
-        GROUP BY Aws_AccountName
-    )
-
-    -- 3. Gộp với bảng RESULT_RDS_CALCULATE để tính chi phí theo instance
-    SELECT 
-        r.Aws_AccountName,
-        r.DbInstanceIdentifier,
-        r.DbInstanceType,
-        r.TotalUptime,
-        ISNULL(ic.TotalMatchedCost, 0) AS MatchedCost,
-        ISNULL(uc.TotalUnmatchedCost, 0) AS UnmatchedCost,
-        COUNT(*) OVER (PARTITION BY r.Aws_AccountName) AS InstanceCountPerAccount
-    INTO #FinalCost
-    FROM [RESULT_RDS_CALCULATE] r
-    LEFT JOIN #InstanceCost ic
-        ON r.DbInstanceType = ic.DbInstanceType AND r.Aws_AccountName = ic.Aws_AccountName
-    LEFT JOIN (
-        SELECT Aws_AccountName, SUM(Cost) AS TotalUnmatchedCost
-        FROM [RDS_COST]
-        WHERE UsageType NOT LIKE '%:db.%' AND UsageType <> 'TOTAL'
-        GROUP BY Aws_AccountName
-    ) uc ON r.Aws_AccountName = uc.Aws_AccountName
-
-    -- 4. Tính tổng chi phí cuối cùng
+    -- Lấy chi phí matched (đã biết type)
+    IF OBJECT_ID('tempdb..#MatchedCost') IS NOT NULL DROP TABLE #MatchedCost;
     SELECT
         Aws_AccountName,
-        DbInstanceIdentifier,
-        CAST((MatchedCost + (UnmatchedCost / NULLIF(InstanceCountPerAccount, 0))) AS DECIMAL(18,2)) AS FinalCostUSD
-    FROM #FinalCost
+        REPLACE(SUBSTRING(UsageType, CHARINDEX(':db.', UsageType) + 4, LEN(UsageType)), 'Usage', '') AS DbInstanceType,
+        SUM(Cost) AS MatchedCost
+    INTO #MatchedCost
+    FROM RDS_COST
+    WHERE UsageType LIKE '%InstanceUsage:db.%'
+    GROUP BY Aws_AccountName,
+             REPLACE(SUBSTRING(UsageType, CHARINDEX(':db.', UsageType) + 4, LEN(UsageType)), 'Usage', '');
+
+    -- Lọc các instance hợp lệ (phải có trong matched types)
+    IF OBJECT_ID('tempdb..#ValidInstances') IS NOT NULL DROP TABLE #ValidInstances;
+    SELECT r.*
+    INTO #ValidInstances
+    FROM RESULT_RDS_CALCULATE r
+    INNER JOIN #ValidTypes vt 
+        ON r.Aws_AccountName = vt.Aws_AccountName AND r.DbInstanceType = vt.DbInstanceType;
+
+    -- Tính số instance hợp lệ mỗi account
+    IF OBJECT_ID('tempdb..#InstanceCountPerAccount') IS NOT NULL DROP TABLE #InstanceCountPerAccount;
+    SELECT
+        Aws_AccountName,
+        COUNT(*) AS InstanceCount
+    INTO #InstanceCountPerAccount
+    FROM #ValidInstances
+    GROUP BY Aws_AccountName;
+
+    -- Tính unmatched cost: những usage_type không thuộc loại InstanceUsage:db.*
+    IF OBJECT_ID('tempdb..#UnmatchedCost') IS NOT NULL DROP TABLE #UnmatchedCost;
+    SELECT
+        Aws_AccountName,
+        SUM(Cost) AS UnmatchedCost
+    INTO #UnmatchedCost
+    FROM RDS_COST
+    WHERE (UsageType NOT LIKE '%InstanceUsage:db.%' AND UsageType <> 'TOTAL')
+    GROUP BY Aws_AccountName;
+
+    -- Tính chi phí cuối cùng: Matched + chia đều Unmatched
+    SELECT
+        vi.Aws_AccountName,
+        vi.DbInstanceIdentifier,
+        vi.DbInstanceType,
+        ISNULL(mc.MatchedCost, 0) AS MatchedCostUSD,
+        ISNULL(uc.UnmatchedCost, 0) / NULLIF(ic.InstanceCount, 0) AS SharedUnmatchedCostUSD,
+        ROUND(ISNULL(mc.MatchedCost, 0) + ISNULL(uc.UnmatchedCost, 0) / NULLIF(ic.InstanceCount, 0), 2) AS FinalCostUSD
+    FROM #ValidInstances vi
+    LEFT JOIN #MatchedCost mc 
+        ON vi.Aws_AccountName = mc.Aws_AccountName AND vi.DbInstanceType = mc.DbInstanceType
+    LEFT JOIN #UnmatchedCost uc 
+        ON vi.Aws_AccountName = uc.Aws_AccountName
+    LEFT JOIN #InstanceCountPerAccount ic 
+        ON vi.Aws_AccountName = ic.Aws_AccountName
+    ORDER BY vi.Aws_AccountName, vi.DbInstanceIdentifier;
 END
