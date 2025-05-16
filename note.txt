@@ -1,42 +1,106 @@
-What’s New in Camunda 8 Compared to Camunda 7
-I. Architecture and Infrastructure
+CREATE PROCEDURE sp_CalculateRdsCostByInstance
+AS
+BEGIN
+    SET NOCOUNT ON;
 
-Cloud-native and Microservices:
-Camunda 8 is built using a cloud-native, microservices-based architecture. Unlike Camunda 7's monolithic design, Camunda 8 runs on a cluster of independent nodes. This allows for horizontal scaling, improved fault tolerance, and a significant reduction in bottlenecks since the system does not depend on a centralized relational database.
+    -- 1. Các loại instance từ bảng RESULT_RDS_CALCULATE
+    WITH InstanceTypesInUse AS (
+        SELECT DISTINCT DbInstanceType
+        FROM [IDA_CLOUD_COST].[dbo].[RESULT_RDS_CALCULATE]
+        WHERE DbInstanceType IS NOT NULL
+    ),
 
-Zeebe Engine:
-Instead of relying on the Activiti engine used in Camunda 7, Camunda 8 employs Zeebe—an event-driven workflow engine. Zeebe stores state as an event stream rather than in a traditional relational database, enabling better scalability and real-time processing of high-throughput workflows.
+    -- 2. Chi phí matched theo instance type (có trong bảng RESULT)
+    MatchedCost AS (
+        SELECT
+            RIGHT([UsageType], LEN([UsageType]) - CHARINDEX(':db.', [UsageType]) - 1) AS DbInstanceType,
+            Aws_AccountName,
+            SUM([Cost]) AS TotalCost
+        FROM [IDA_CLOUD_COST].[dbo].[RDS_COST]
+        WHERE [UsageType] LIKE 'APS1-InstanceUsage:db.%'
+            AND [UsageType] != 'TOTAL'
+            AND RIGHT([UsageType], LEN([UsageType]) - CHARINDEX(':db.', [UsageType]) - 1) IN (
+                SELECT DbInstanceType FROM InstanceTypesInUse
+            )
+        GROUP BY RIGHT([UsageType], LEN([UsageType]) - CHARINDEX(':db.', [UsageType]) - 1), Aws_AccountName
+    ),
 
-II. Communication and Task Execution
+    -- 3. Tổng uptime theo instance type
+    MatchedUptime AS (
+        SELECT
+            DbInstanceType,
+            Aws_AccountName,
+            SUM(TotalUptime) AS TotalUptime
+        FROM [IDA_CLOUD_COST].[dbo].[RESULT_RDS_CALCULATE]
+        WHERE DbInstanceType IS NOT NULL
+        GROUP BY DbInstanceType, Aws_AccountName
+    ),
 
-Remote Communication via gRPC:
-In Camunda 7, the engine can be embedded within an application, allowing for direct internal calls or REST API-based interactions. Camunda 8, however, requires applications to communicate remotely via gRPC through the Zeebe Gateway. This approach optimizes performance and enables efficient request distribution across a distributed cluster.
+    -- 4. Tính đơn giá theo giờ theo account + type
+    UnitCost AS (
+        SELECT
+            m.DbInstanceType,
+            m.Aws_AccountName,
+            m.TotalCost / u.TotalUptime AS UnitCost
+        FROM MatchedCost m
+        JOIN MatchedUptime u ON m.DbInstanceType = u.DbInstanceType AND m.Aws_AccountName = u.Aws_AccountName
+    ),
 
-Mandatory Job Worker Model:
-Camunda 8 enforces an asynchronous job worker model for executing business logic. Unlike Camunda 7, which supports both synchronous (embedded) and asynchronous (external task pattern) execution, all service tasks in Camunda 8 are handled by external job workers. This clear separation between workflow orchestration and business logic execution improves reliability and scalability.
+    -- 5. Tổng hợp unmatched cost (không có instance type trong RESULT_RDS_CALCULATE)
+    UnmatchedCost AS (
+        SELECT
+            Aws_AccountName,
+            SUM(Cost) AS UnmatchedTotalCost
+        FROM [IDA_CLOUD_COST].[dbo].[RDS_COST]
+        WHERE [UsageType] LIKE 'APS1-InstanceUsage:db.%'
+            AND [UsageType] != 'TOTAL'
+            AND RIGHT([UsageType], LEN([UsageType]) - CHARINDEX(':db.', [UsageType]) - 1) NOT IN (
+                SELECT DbInstanceType FROM InstanceTypesInUse
+            )
+        GROUP BY Aws_AccountName
+    ),
 
-III. Management, Monitoring, and Integration Tools
+    -- 6. Ghép chi phí cho từng instance
+    InstanceCosts AS (
+        SELECT
+            r.Aws_AccountName,
+            r.DbInstanceIdentifier,
+            r.DbInstanceType,
+            r.TotalUptime,
+            u.UnitCost,
+            r.TotalUptime * ISNULL(u.UnitCost, 0) AS BaseCost,
+            CASE WHEN u.UnitCost IS NULL THEN 1 ELSE 0 END AS IsUnmapped
+        FROM [IDA_CLOUD_COST].[dbo].[RESULT_RDS_CALCULATE] r
+        LEFT JOIN UnitCost u ON r.DbInstanceType = u.DbInstanceType AND r.Aws_AccountName = u.Aws_AccountName
+    ),
 
-Enhanced Tooling:
-Camunda 8 introduces modern management and monitoring tools such as Operate, Tasklist, and Web Modeler. Operate provides detailed insights into workflow instances, enabling quick identification and resolution of issues. The Web Modeler facilitates online BPMN modeling, enhancing collaboration and easing the design process compared to the legacy tools in Camunda 7.
+    -- 7. Tính số lượng instance hợp lệ mỗi account để chia unmatched cost
+    MatchedInstanceCount AS (
+        SELECT
+            Aws_AccountName,
+            COUNT(*) AS InstanceCount
+        FROM InstanceCosts
+        WHERE IsUnmapped = 0
+        GROUP BY Aws_AccountName
+    ),
 
-Built-in Connectors and Advanced APIs:
-Camunda 8 comes with a suite of pre-built connectors that simplify integration with external systems (e.g., REST, Kafka, cloud services). Additionally, it supports advanced API communication via gRPC (for engine interaction) and GraphQL (for task management), reducing the need for extensive custom integration code.
+    -- 8. Tổng hợp cuối cùng: cộng base cost + unmatched phân bổ
+    FinalCost AS (
+        SELECT
+            i.Aws_AccountName,
+            i.DbInstanceIdentifier,
+            i.BaseCost + ISNULL(uc.UnmatchedTotalCost / NULLIF(m.InstanceCount, 0), 0) AS TotalCost
+        FROM InstanceCosts i
+        LEFT JOIN UnmatchedCost uc ON i.Aws_AccountName = uc.Aws_AccountName
+        LEFT JOIN MatchedInstanceCount m ON i.Aws_AccountName = m.Aws_AccountName
+    )
 
-IV. Development and Deployment Process
+    -- 9. Xuất kết quả
+    SELECT
+        Aws_AccountName,
+        DbInstanceIdentifier,
+        ROUND(TotalCost, 2) AS FinalCostUSD
+    FROM FinalCost
+    ORDER BY Aws_AccountName, DbInstanceIdentifier;
 
-Separation of Engine and Application:
-Unlike Camunda 7, where the engine can be embedded in the application to share transactions and resources, Camunda 8 is deployed as an independent service. Developers now deploy BPMN models remotely using client libraries, and application logic is executed by independent job workers.
-
-Modern CI/CD and Repository Management:
-Camunda 8 supports a more robust development workflow, where BPMN models and integration code are managed in dedicated repositories. CI/CD pipelines are leveraged for automated deployments using tools such as Helm charts, Docker, and Kubernetes, ensuring consistent versioning and streamlined updates.
-
-V. Comparison between Camunda 7 and Camunda 8
-Feature	Camunda 7	Camunda 8
-Architecture	Monolithic; supports embedding the engine within the application and relies on a relational database	Cloud-native and microservices-based; the engine runs independently in a cluster without relying on a centralized database
-Engine	Based on the Activiti engine, allowing for embedded execution and sharing of transactions within the same JVM	Utilizes Zeebe – an event-driven engine that stores state as an event stream
-Communication	Uses REST API or internal calls when the engine is embedded	Remote communication via gRPC through the Zeebe Gateway
-Task Execution	Supports both synchronous (embedded engine) and asynchronous (external task pattern) execution methods	Requires the use of a job worker model to process business logic asynchronously
-Management & Monitoring Tools	Cockpit, Tasklist (with basic management features in the Enterprise edition)	Operate, Tasklist, and Web Modeler with modern interfaces, providing enhanced monitoring, management, and online modeling capabilities
-Integration & Connectors	Manual integration with limited pre-built connector support, often requiring custom code	Comes with built-in connectors for easy integration with external systems (e.g., REST, Kafka, etc.)
-Deployment	Can be embedded directly within applications; on-premise deployments rely on traditional installation methods	Deployments are managed via CI/CD pipelines using Helm charts, Docker, and Kubernetes; the engine is deployed as an independent service
+END;
